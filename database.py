@@ -3,14 +3,16 @@ import os
 
 def execute_query(sql_query: str):
     """
-    Executes the given SQL query on the SQLite database.
+    Executes one or more SQL statements on the SQLite database.
 
+    If the query contains multiple statements (separated by semicolons),
+    they are executed as a script. If it's a SELECT query, the results are fetched and returned.
+    
     Args:
-        sql_query (str): The SQL query to execute.
+        sql_query (str): The SQL query (or queries) to execute.
 
     Returns:
-        list: The result set of the query as a list of tuples for SELECT queries,
-              or an empty list for non-SELECT queries.
+        list: The result set for SELECT queries, or an empty list for non-SELECT queries.
 
     Raises:
         Exception: If an error occurs during query execution.
@@ -19,36 +21,56 @@ def execute_query(sql_query: str):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = os.path.join(base_dir, "data", "database.db")
     
+    conn = None
     try:
-        # Connect to the SQLite database.
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # Split the query on semicolons to see if there are multiple statements.
+        # We filter out any empty statements.
+        statements = [stmt.strip() for stmt in sql_query.split(';') if stmt.strip()]
 
-        # Execute the SQL query.
-        cursor.execute(sql_query)
-
-        # If the query is a SELECT statement, fetch the results.
-        if sql_query.strip().lower().startswith("select"):
-            results = cursor.fetchall()
-        else:
-            # For other queries (e.g., INSERT, UPDATE, DELETE), commit changes.
+        if len(statements) > 1:
+            # Multiple statements detected.
+            # Rebuild the script with semicolons and execute as a script.
+            script = ';'.join(statements) + ';'
+            cursor.executescript(script)
             conn.commit()
-            results = []
+            # For multi-statement scripts, we assume no results need to be returned.
+            return []
+        else:
+            # Only one statement is present.
+            cursor.execute(sql_query)
+            # If the statement is a SELECT, fetch and return the results.
+            if sql_query.strip().lower().startswith("select"):
+                results = cursor.fetchall()
+            else:
+                conn.commit()
+                results = []
+            return results
 
-        return results
     except Exception as e:
         raise Exception(f"Error executing SQL query: {e}")
     finally:
-        # Ensure the database connection is closed.
         if conn:
             conn.close()
 
-
 # Optional: For standalone testing of the module
 if __name__ == "__main__":
-    sample_query = "SELECT sqlite_version();"
+    sample_query = """
+    CREATE TABLE IF NOT EXISTS Customers (
+        CustomerID INT PRIMARY KEY,
+        Name VARCHAR(50),
+        Email VARCHAR(100)
+    );
+
+    INSERT INTO Customers (CustomerID, Name, Email)
+    VALUES
+        (1, 'John Doe', 'johndoe@example.com'),
+        (2, 'Jane Smith', 'janesmith@example.com');
+    """
     try:
         result = execute_query(sample_query)
-        print("Query Results:", result)
+        print("Query executed successfully. Results:", result)
     except Exception as err:
         print(err)
